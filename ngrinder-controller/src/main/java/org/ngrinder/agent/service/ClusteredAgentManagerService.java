@@ -36,7 +36,6 @@ import org.ngrinder.region.service.RegionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.Cache;
 import org.springframework.cache.Cache.ValueWrapper;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,8 +63,6 @@ import static org.ngrinder.common.util.TypeConvertUtils.cast;
 public class ClusteredAgentManagerService extends AgentManagerService implements TopicListener<ClusteredAgentRequest> {
 	private final Logger LOGGER = LoggerFactory.getLogger(ClusteredAgentManagerService.class);
 
-	private Cache agentMonitoringTargetsCache;
-
 	@Autowired
 	private TopicSubscriber topicSubscriber;
 
@@ -91,7 +88,6 @@ public class ClusteredAgentManagerService extends AgentManagerService implements
 	@Override
 	public void checkAgentStatePeriodically() {
 		super.checkAgentStatePeriodically();
-		collectAgentSystemData();
 	}
 
 	/**
@@ -166,48 +162,6 @@ public class ClusteredAgentManagerService extends AgentManagerService implements
 		if (!newAgents.isEmpty() || !updatedAgents.isEmpty()) {
 			expireLocalCache();
 		}
-	}
-
-
-	private Gson gson = new Gson();
-
-	/**
-	 * Collect the agent system info every second.
-	 */
-	public void collectAgentSystemData() {
-		if (agentMonitoringTargetsCache == null) {
-			return;
-		}
-		Ehcache nativeCache = (Ehcache) agentMonitoringTargetsCache.getNativeCache();
-		List<String> keysWithExpiryCheck = cast(nativeCache.getKeysWithExpiryCheck());
-		for (String each : keysWithExpiryCheck) {
-			ValueWrapper value = agentMonitoringTargetsCache.get(each);
-			AgentControllerIdentityImplementation agentIdentity = cast(value.get());
-			if (agentIdentity != null) {
-				// Is Same Region
-				if (isCurrentRegion(agentIdentity)) {
-					try {
-						updateSystemStat(agentIdentity);
-					} catch (IllegalStateException e) {
-						LOGGER.error("error while update system stat.");
-					}
-				}
-			}
-		}
-	}
-
-	public void updateSystemStat(final AgentControllerIdentityImplementation agentIdentity) {
-		cachedLocalAgentService.doSthInTransaction(new Runnable() {
-			public void run() {
-				agentManagerRepository.updateSystemStat(agentIdentity.getIp(),
-						agentIdentity.getName(),
-						gson.toJson(getSystemDataModel(agentIdentity)));
-			}
-		});
-	}
-
-	private SystemDataModel getSystemDataModel(AgentIdentity agentIdentity) {
-		return getAgentManager().getSystemDataModel(agentIdentity);
 	}
 
 	public List<AgentInfo> getAllActive() {
@@ -336,21 +290,9 @@ public class ClusteredAgentManagerService extends AgentManagerService implements
 	 * @return {@link SystemDataModel} instance.
 	 */
 	@Override
-	public SystemDataModel getSystemDataModel(String ip, String name) {
-		AgentInfo found = agentManagerRepository.findByIpAndHostName(ip, name);
-		String systemStat = (found == null) ? null : found.getSystemStat();
-		return (StringUtils.isEmpty(systemStat)) ? new SystemDataModel() : gson.fromJson(systemStat,
-				SystemDataModel.class);
-	}
-
-	/**
-	 * Register agent monitoring target. This method should be called in the
-	 * controller in which the given agent exists.
-	 *
-	 * @param agentIdentity agent identity
-	 */
-	public void addAgentMonitoringTarget(AgentControllerIdentityImplementation agentIdentity) {
-		agentMonitoringTargetsCache.put(createKey(agentIdentity), agentIdentity);
+	public SystemDataModel getSystemDataModel(String ip, String name, String region) {
+		SystemDataModel systemDataModel = hazelcastService.submitToRegion(AGENT_EXECUTOR_SERVICE_NAME, new InquireAgentStateTask(ip, name), region);
+		return systemDataModel != null ? systemDataModel : new SystemDataModel();
 	}
 
 	/**
