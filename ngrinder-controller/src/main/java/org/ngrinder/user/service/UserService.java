@@ -48,6 +48,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+import static org.ngrinder.common.constant.CacheConstants.CACHE_USERS;
+
 /**
  * The Class UserService.
  *
@@ -87,7 +89,7 @@ public class UserService extends AbstractUserService {
 
 	@PostConstruct
 	public void init() {
-		userCache = cacheManager.getCache("users");
+		userCache = cacheManager.getCache(CACHE_USERS);
 		userModelCache = cacheManager.getCache("org.ngrinder.model.User");
 	}
 
@@ -98,7 +100,7 @@ public class UserService extends AbstractUserService {
 	 * @return user
 	 */
 	@Transactional
-	@Cacheable("users")
+	@Cacheable(CACHE_USERS)
 	@Override
 	public User getOne(String userId) {
 		return userRepository.findOneByUserId(userId);
@@ -139,7 +141,7 @@ public class UserService extends AbstractUserService {
 	 * @return User
 	 */
 	@Transactional
-	@CachePut(value = "users", key = "#user.userId")
+	@CachePut(value = CACHE_USERS, key = "#user.userId")
 	@Override
 	public User save(User user) {
 		encodePassword(user);
@@ -153,7 +155,7 @@ public class UserService extends AbstractUserService {
 	 * @return User
 	 */
 	@Transactional
-	@CachePut(value = "users", key = "#user.userId")
+	@CachePut(value = CACHE_USERS, key = "#user.userId")
 	@Override
 	public User saveWithoutPasswordEncoding(User user) {
 		final List<User> followers = getFollowers(user.getFollowersStr());
@@ -207,7 +209,7 @@ public class UserService extends AbstractUserService {
 	 */
 	@SuppressWarnings("SpringElInspection")
 	@Transactional
-	@CacheEvict(value = "users", key = "#userId")
+	@CacheEvict(value = CACHE_USERS, key = "#userId")
 	public void delete(String userId) {
 		User user = getOne(userId);
 		List<PerfTest> deletePerfTests = perfTestService.deleteAll(user);
@@ -279,7 +281,7 @@ public class UserService extends AbstractUserService {
 	 * @return User
 	 */
 	@Transactional
-	@CachePut(value = "users", key = "#user.userId")
+	@CachePut(value = CACHE_USERS, key = "#user.userId")
 	@Override
 	public User createUser(User user) {
 		encodePassword(user);
